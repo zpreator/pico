@@ -9,6 +9,7 @@ from edisplay import EPD_2in9_Landscape
 import ntptime
 import urequests
 import ujson
+from key import KEY
 
 # https://github.com/simonprickett/phewap
 
@@ -18,7 +19,6 @@ AP_TEMPLATE_PATH = "ap_templates"
 APP_TEMPLATE_PATH = "app_templates"
 WIFI_FILE = "wifi.json"
 WIFI_MAX_ATTEMPTS = 3
-KEY = "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"
 
 epd = EPD_2in9_Landscape()
 
