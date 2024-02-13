@@ -1,4 +1,4 @@
-from phew import access_point, connect_to_wifi, is_connected_to_wifi, dns, server
+from phew import access_point, connect_to_wifi, is_connected_to_wifi, dns, server, logging
 from phew.template import render_template
 import json
 import machine
@@ -19,12 +19,17 @@ AP_TEMPLATE_PATH = "ap_templates"
 APP_TEMPLATE_PATH = "app_templates"
 WIFI_FILE = "wifi.json"
 WIFI_MAX_ATTEMPTS = 3
+CONFIG_WAIT = 15  # Wait 15 seconds to start clock
 
 epd = EPD_2in9_Landscape()
+epd.Clear(0xff)
+epd.fill(0xff)
+epd.text("Starting up...", 20, 75, 0x00)
+epd.display(epd.buffer)
+epd.delay_ms(500)
 
-role = """
-Generate a poem that describes the current time of day, rhyming with the hour and minute names. The poem should evoke a sense of atmosphere and emotions associated with the given time. The poem should also only be two lines long. Most importantly, you must use the time in the poem, here is an example where its 5:36: Beneath the dusk's enchantment, it's five thirty-six. Night's ballet unfolds, and dreams in moonlight mix.'
-"""
+with open("paragraph.txt", "r") as file:
+    role = file.read()
 
 def machine_reset():
     utime.sleep(1)
@@ -35,14 +40,18 @@ def setup_mode():
     print("Entering setup mode...")
     def display_qr():
         from edisplay import WIFI_QR
-        epd.Clear(0xff)
+        # epd.Clear(0xff)
         epd.fill(0xff)
         for y, row in enumerate(WIFI_QR):
             for x, pixel in enumerate(row):
                 if pixel == 1:
                     epd.pixel(x, y, 0x00)  # Black pixel
         # del WIFI_QR
-        epd.text("Scan to get started", 75, 10, 0x00)
+        epd.text("WiFi Setup Mode..", 75, 10, 0x00)
+        epd.text("Scan to get started", 75, 30, 0x00)
+        epd.text("Tip: Sometimes you may need to", 10, 60, 0x00)
+        epd.text("unplug the device for 10 seconds", 10, 80, 0x00)
+        epd.text("after setting up WiFi", 10, 100, 0x00)
         epd.display(epd.buffer)
         epd.delay_ms(2000)
 
@@ -83,6 +92,13 @@ def application_mode():
     onboard_led = machine.Pin("LED", machine.Pin.OUT)
 
     def app_index(request):
+        server.cancel_stop()
+        epd.Clear(0xff)
+        epd.fill(0xff)
+        epd.text("Someone has connected!", 10, 10, 0x00)
+        epd.text("YAY :)", 10, 30, 0x00)
+        epd.display(epd.buffer)
+        epd.delay_ms(2000)
         return render_template(f"{APP_TEMPLATE_PATH}/index.html")
 
     def app_toggle_led(request):
@@ -101,6 +117,10 @@ def application_mode():
         temperature = 27 - (reading - 0.706)/0.001721
         return f"{round(temperature, 1)}"
     
+    def app_restart(request):
+        _thread.start_new_thread(machine_reset, ())
+        return render_template(f"{APP_TEMPLATE_PATH}/restart.html")
+    
     def app_reset(request):
         # Deleting the WIFI configuration file will cause the device to reboot as
         # the access point and request new configuration.
@@ -109,6 +129,17 @@ def application_mode():
         _thread.start_new_thread(machine_reset, ())
         return render_template(f"{APP_TEMPLATE_PATH}/reset.html", access_point_ssid = AP_NAME)
 
+    def app_prompt(request):
+        with open("paragraph.txt", "r") as file:
+            text = file.read()
+        return text
+    
+    def app_save_prompt(request):
+        text = request.form['editedText']
+        with open("paragraph.txt", "w") as file:
+            file.write(text)
+        return render_template(f"{APP_TEMPLATE_PATH}/index.html")
+        
     def app_catch_all(request):
         return "Not found.", 404
 
@@ -116,6 +147,9 @@ def application_mode():
     server.add_route("/toggle", handler = app_toggle_led, methods = ["GET"])
     server.add_route("/temperature", handler = app_get_temperature, methods = ["GET"])
     server.add_route("/reset", handler = app_reset, methods = ["GET"])
+    server.add_route("/restart", handler = app_restart, methods = ["GET"])
+    server.add_route("/prompt", handler = app_prompt, methods= ["GET"])
+    server.add_route("/save_prompt", handler= app_save_prompt, methods= ["POST"])
     # Add other routes for your application...
     server.set_callback(app_catch_all)
 
@@ -168,18 +202,19 @@ def get_time_message(time_of_day):
         if resp.status_code == 200:
             # Successful response
             print("Request successful")
-            print(resp.text)
+            # print(resp.text)
         else:
             # Error response
             print("Error:", resp.status_code)
             print(resp.text)
+        response = resp.json()
+        text = response["choices"][0]["message"]["content"]
+        status = response["choices"][0]["finish_reason"]
 
     except Exception as e:
         print("Error:", e)
-    
-    response = resp.json()
-    text = response["choices"][0]["message"]["content"]
-    status = response["choices"][0]["finish_reason"]
+        text = "Error: " + str(e)
+        status = "Fail"
     return text, status
     
 def format_message(input_str, max_chars):
@@ -223,10 +258,9 @@ def display(lines, time):
     epd.display(epd.buffer)
     epd.delay_ms(2000)
 
-def start_server():
-    server.run()
 
 # Figure out which mode to start up in...
+logging.info("Trying wifi connection")
 setup = True
 try:
     os.stat(WIFI_FILE)
@@ -241,12 +275,21 @@ try:
 
             if is_connected_to_wifi():
                 print(f"Connected to wifi, IP address {ip_address}")
+                logging.info(f"Connected to wifi, IP address {ip_address}")
                 break
             else:
                 wifi_current_attempt += 1
                 
         if is_connected_to_wifi():
             application_mode()
+            epd.Clear(0xff)
+            epd.fill(0xff)
+            epd.text(f"Connect to device from", 10, 10, 0x00)
+            epd.text(f"a browser at {ip_address}", 10, 30, 0x00)
+            epd.text(f"The clock will automatically", 10, 60, 0x00)
+            epd.text(f"startup in {CONFIG_WAIT} seconds", 10, 80, 0x00)
+            epd.display(epd.buffer)
+            epd.delay_ms(500)
             setup = False
         else:
             
@@ -254,21 +297,43 @@ try:
             # into setup mode to get new credentials from the user.
             print("Bad wifi connection!")
             print(wifi_credentials)
+            logging.error("Bad Wifi connection")
             os.remove(WIFI_FILE)
             machine_reset()
 
-except Exception:
+except Exception as e:
     # Either no wifi configuration file found, or something went wrong, 
     # so go into setup mode.
+    logging.error(f"Error: {e}, going into setup mode")
     setup_mode()
 
-# Start the web server...
-_thread.start_new_thread(start_server, ())
+try:
+    if setup:
+        server.run()
+    else:
+        server.run(wait=CONFIG_WAIT)
+except Exception as e:
+    logging.error(f"Error: {e} with servers")
+    epd.Clear(0xff)
+    epd.fill(0xff)
+    epd.text(f"Server Error: {e}", 10, 10, 0x00)
+    epd.display(epd.buffer)
+    epd.delay_ms(500)
 
 # The LED will indicate internet connection
 try:
-    # ntptime.settime()
-    display(["Welcome to the CLOCK"], get_formatted_time())
+    ntptime.settime()
+    # Get the current time
+    current_time = get_formatted_time()
+    
+    # Get poem from openai
+    message, status = get_time_message(current_time)
+    
+    # Format message to wrap lines
+    lines = format_message(message, 30)
+
+    # Update the display with the message
+    display(lines, current_time)
     utime.sleep(3)
         
     try:
@@ -293,4 +358,13 @@ try:
         # Handle keyboard interrupt (Ctrl+C) to exit the loop gracefully
         pass
 except KeyboardInterrupt:
+    machine.reset()
+except Exception as e:
+    print(f"Error: {e}")
+    logging.error(str(e))
+    epd.Clear(0xff)
+    epd.fill(0xff)
+    epd.text("Something went wrong, restarting", 10, 10, 0x00)
+    epd.display(epd.buffer)
+    epd.delay_ms(500)
     machine.reset()

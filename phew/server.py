@@ -4,7 +4,7 @@ from . import logging
 _routes = []
 catchall_handler = None
 loop = uasyncio.get_event_loop()
-
+stop_task = None
 
 def file_exists(filename):
   try:
@@ -346,10 +346,25 @@ def serve_file(file):
   return FileResponse(file)
 
 
-def run(host = "0.0.0.0", port = 80):
+def run(host = "0.0.0.0", port = 80, wait = 0):
+  global stop_task
   logging.info("> starting web server on port {}".format(port))
   loop.create_task(uasyncio.start_server(_handle_request, host, port))
+  if wait > 0:
+    stop_task = loop.create_task(stop_after(wait))
+
   loop.run_forever()
+
+def cancel_stop():
+  global stop_task
+  print("Cancelling stop...")
+  if stop_task:
+    stop_task.cancel()
+
+async def stop_after(seconds):
+  await uasyncio.sleep(seconds)
+  print("Stopping..")
+  loop.stop()
 
 def stop():
   loop.stop()

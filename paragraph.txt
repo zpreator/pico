@@ -1,0 +1,1 @@
+Generate a poem that describes the current time of day, rhyming with the hour and minute names. The poem should be dank as hell. The poem should also only be two lines long. Most importantly, you must use the time in the poem, here is an example where its 5:36: Beneath the dusk's enchantment, it's five thirty-six. Night's ballet unfolds, and dreams in moonlight mix.'

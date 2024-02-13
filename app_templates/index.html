@@ -3,16 +3,111 @@
     <head>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Raspberry Pi Pico W</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                margin: 20px;
+            }
+            textarea {
+                width: 100%;
+                height: 200px;
+                margin-bottom: 10px;
+            }
+            button {
+                padding: 10px 20px;
+                background-color: #007bff;
+                color: #fff;
+                border: none;
+                cursor: pointer;
+            }
+            button:hover {
+                background-color: #0056b3;
+            }
+        </style>
     </head>
     <body>
-        <h1>Success</h1>
-        <p>The Raspberry Pi Pico W is connected to the network!</p>
+        <h1>Pico Clock Configuration</h1>
+        <h4>Below is the prompt that chatgpt will use to generate different poems. Edit it to add your own flair!</h4>
+        <div id="content">
+            <p id="paragraph">Loading...</p>
+        </div>
+        <button id="editButton" onclick="toggleEdit()">Edit</button>
+        <div id="editArea" style="display: none;">
+            <textarea id="editedText"></textarea>
+            <button onclick="saveChanges()">Save</button>
+        </div>
+        <p style="color: red; display: none">Restart the device to see the changes</p>
+    
+        <script>
+            // Function to load text from server
+            function loadText() {
+                fetch('/prompt')
+                .then(response => response.text())
+                .then(data => {
+                    document.getElementById("paragraph").innerText = data;
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                });
+            }
+    
+            // Load text when the page is loaded
+            loadText();
+    
+            function toggleEdit() {
+                var editButton = document.getElementById("editButton");
+                var editArea = document.getElementById("editArea");
+                var contentArea = document.getElementById("content");
+
+                if (editButton.innerText === "Edit") {
+                    // Switch to edit mode
+                    editButton.innerText = "Cancel";
+                    editArea.style.display = "block";
+                    contentArea.style.display = "none";
+                    document.getElementById("editedText").value = document.getElementById("paragraph").innerText;
+                } else {
+                    // Cancel edit mode
+                    editButton.innerText = "Edit";
+                    editArea.style.display = "none";
+                    contentArea.style.display = "block";
+                    document.getElementById("paragraph").innerText = originalText; // Revert to original text
+                }
+            }
+    
+            function saveChanges() {
+                var editedText = document.getElementById("editedText").value;
+                document.getElementById("paragraph").innerText = editedText;
+
+                // Save the edited text to server
+                fetch('/save_prompt', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: 'editedText=' + encodeURIComponent(editedText),
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    } else {
+                        // Hide edit area and show content area after saving changes
+                        document.getElementById("content").style.display = "block";
+                        document.getElementById("editArea").style.display = "none";
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                });
+            }
+        </script>
         <p>Pico internal temperature: <span id="tempValue"></span>C.</p>
         <br/>
         <button id="toggleBtn">Toggle LED</button>
         <button id="resetBtn">Reset Wifi</button>
+        <button id="restartBtn">Restart Device</button>
         <script src="data:text/javascript,document.getElementById('toggleBtn').onclick = async function() { await fetch('/toggle'); };" defer></script>
         <script src="data:text/javascript,document.getElementById('resetBtn').onclick = function() { window.location.href = '/reset'; };" defer></script>
+        <script src="data:text/javascript,document.getElementById('restartBtn').onclick = function() { window.location.href = '/restart'; };" defer></script>
         <script src="data:text/javascript,async function getTemp() { const elem = document.getElementById('tempValue'); elem.innerHTML = 'Updating...'; const t = await fetch('/temperature'); const tVal = await t.text(); elem.innerHTML = tVal; setTimeout(getTemp, 10000)}; getTemp();" defer></script>
     </body>
 </html>
